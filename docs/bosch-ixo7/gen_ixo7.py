@@ -189,7 +189,7 @@ DEFS = f"""<defs>
 def footer(no):
     return (L(20, 852, W - 20, 852, INK, 0.8)
             + T(40, 874, "BOSCH IXO 7 무선 전동 드라이버 — 작동원리 도면집", 12.5, 600)
-            + T(W - 40, 874, f"도번 IXO7-0{no}  ·  {no} / 4  ·  축척 NTS (개략)  ·  2026-10-07  ·  작성 Claude Code",
+            + T(W - 40, 874, f"도번 IXO7-0{no}  ·  {no} / 5  ·  축척 NTS (개략)  ·  2026-10-07  ·  작성 Claude Code",
                 12.5, 400, MUTED, "end"))
 
 
@@ -916,9 +916,184 @@ def sheet4():
                  "Flexible shaft adapter · 꺾인 상태로 회전을 전달하는 원리", "".join(b))
 
 
-for i, fn in enumerate((sheet1, sheet2, sheet3, sheet4), 1):
-    names = {1: "01-section", 2: "02-power-flow", 3: "03-planetary-gear", 4: "04-flexible-shaft"}
-    path = os.path.join(OUT, f"ixo7-{names[i]}.svg")
+
+# ====================================================================== SHEET 5
+def sheet5():
+    b = []
+    for (x, y, w, h, title) in [(40, 100, 650, 370, "A. 굽힘은 쉽고, 비틀림은 단단하다"),
+                                (710, 100, 650, 370, "B. 모양은 그대로 — 코어가 제자리에서 돈다"),
+                                (40, 485, 650, 355, "C. 한 바퀴 도는 동안 와이어 하나에 일어나는 일"),
+                                (710, 485, 650, 355, "D. 와인드업 — 먼저 비틀렸다가 돈다")]:
+        b.append(R(x, y, w, h, "white", INK, 1, 8))
+        b.append(T(x + 20, y + 30, title, 16, 700))
+
+    def pol(cx, cy, r, deg):
+        return cx + r * math.cos(math.radians(deg)), cy + r * math.sin(math.radians(deg))
+
+    # ---------------- A-left: bending a wound tube
+    b.append(T(60, 162, "굽힐 때", 14, 700) + T(60, 180, "와이어끼리 미끄러지며 쉽게 휜다", 12.5, 400, MUTED))
+    acx, acy, ri, ro = 300, 430, 176, 204
+    o0, o1 = pol(acx, acy, ro, 180), pol(acx, acy, ro, 270)
+    i0, i1 = pol(acx, acy, ri, 270), pol(acx, acy, ri, 180)
+    tube = (f"M {f(o0[0])},{f(o0[1])} A {ro} {ro} 0 0 1 {f(o1[0])},{f(o1[1])} "
+            f"L {f(i0[0])},{f(i0[1])} A {ri} {ri} 0 0 0 {f(i1[0])},{f(i1[1])} Z")
+    b.append(P(tube, STEEL, INK, 1.2))
+    for a in range(182, 268, 6):
+        p_in, p_out = pol(acx, acy, ri, a), pol(acx, acy, ro, a + 4)
+        b.append(L(p_in[0], p_in[1], p_out[0], p_out[1], "#4a5866", 1.6))
+    b.append(R(96, 430, 28, 12, STEEL_D, INK, 1) + R(300, 226, 12, 28, STEEL_D, INK, 1))
+    po, pi_ = pol(acx, acy, ro, 222), pol(acx, acy, ri, 228)
+    b.append(leader(150, 218, po[0], po[1]) + T(60, 212, "바깥쪽 — 간격이 벌어짐", 12.5, 600))
+    b.append(leader(196, 380, pi_[0], pi_[1]) + T(180, 396, "안쪽 — 간격이 좁아짐", 12.5, 600))
+
+    # ---------------- A-right: torsion, layers press or separate
+    b.append(T(505, 162, "비틀 때", 14, 700, INK, "middle"))
+    for cx, fwd in ((420, True), (590, False)):
+        cy = 300
+        b.append(T(cx, 190, "정방향 (조임)" if fwd else "역방향 (풀기)", 14, 700, GREEN if fwd else RED, "middle"))
+        if fwd:
+            b.append(C(cx, cy, 58, "#8ea3b8", INK, 1) + C(cx, cy, 46, "#d3dce6", INK, 1) + C(cx, cy, 34, "#f6f7f9", INK, 1))
+            b.append(C(cx, cy, 46, "none", GREEN, 3))
+            b.append(arc(cx, cy, 76, 205, 335, AMBER_D, 2.4, "arwA"))
+            for k in range(6):
+                a = 30 + k * 60
+                p1, p2 = pol(cx, cy, 74, a), pol(cx, cy, 61, a)
+                b.append(L(p1[0], p1[1], p2[0], p2[1], INK, 1.6, 'marker-end="url(#arw)"'))
+                p1, p2 = pol(cx, cy, 16, a), pol(cx, cy, 31, a)
+                b.append(L(p1[0], p1[1], p2[0], p2[1], INK, 1.6, 'marker-end="url(#arw)"'))
+            lines = ("외층 오므라듦", "내층 벌어짐", "→ 밀착: 토크 용량 큼")
+        else:
+            b.append(C(cx, cy, 60, "#8ea3b8", INK, 1) + C(cx, cy, 48, "white", INK, 1, 'stroke-dasharray="3 2"'))
+            b.append(C(cx, cy, 40, "#d3dce6", INK, 1) + C(cx, cy, 28, "#f6f7f9", INK, 1))
+            b.append(arc(cx, cy, 76, 335, 205, AMBER_D, 2.4, "arwA"))
+            for k in range(6):
+                a = 30 + k * 60
+                p1, p2 = pol(cx, cy, 63, a), pol(cx, cy, 75, a)
+                b.append(L(p1[0], p1[1], p2[0], p2[1], INK, 1.6, 'marker-end="url(#arw)"'))
+                p1, p2 = pol(cx, cy, 25, a), pol(cx, cy, 13, a)
+                b.append(L(p1[0], p1[1], p2[0], p2[1], INK, 1.6, 'marker-end="url(#arw)"'))
+            b.append(T(cx, cy - 40.5, "틈", 10.5, 700, RED, "middle"))
+            lines = ("외층 벌어짐", "내층 오므라듦", "→ 틈: 토크 용량 작음")
+        b.append(T(cx, 400, lines[0], 12.5, 400, "#33404f", "middle") + T(cx, 417, lines[1], 12.5, 400, "#33404f", "middle"))
+        b.append(T(cx, 438, lines[2], 13, 700, GREEN if fwd else RED, "middle"))
+    b.append(T(60, 460, "층마다 감는 방향이 반대라서, 조이는 방향으로 비틀면 두 층이 서로 눌러 한 덩어리처럼 버틴다.",
+               12, 400, MUTED))
+
+    # ---------------- B: core spins in place inside a fixed sheath
+    bcx, bcy, BR = 1035, 430, 190
+    a0, a1 = -160, -20
+    s0, s1 = pol(bcx, bcy, BR, a0), pol(bcx, bcy, BR, a1)
+    arc_d = f"M {f(s0[0])},{f(s0[1])} A {BR} {BR} 0 0 1 {f(s1[0])},{f(s1[1])}"
+    b.append(P(arc_d, "none", STEEL, 14))
+    b.append(P(arc_d, "none", "#4a5866", 14, 'stroke-dasharray="2.5 3.5"'))
+    b.append(P(arc_d, "none", DARK, 36, 'stroke-opacity="0.42" stroke-dasharray="12 2.4"'))
+    for rr in (BR - 18, BR + 18):
+        e0, e1 = pol(bcx, bcy, rr, a0), pol(bcx, bcy, rr, a1)
+        b.append(P(f"M {f(e0[0])},{f(e0[1])} A {rr} {rr} 0 0 1 {f(e1[0])},{f(e1[1])}", "none", INK, 1))
+    # end fittings
+    for (px, py), ang, out in ((s0, a0, False), (s1, a1, True)):
+        tx, ty = -math.sin(math.radians(ang)), math.cos(math.radians(ang))
+        if not out:
+            tx, ty = -tx, -ty
+        rot = math.degrees(math.atan2(ty, tx))
+        g = R(0, -18, 30, 36, DARK, "#15181c", 1, 4)
+        if out:
+            g += R(30, -10, 26, 20, STEEL, INK, 1) + P("M 56,-6 L 74,-2 L 80,0 L 74,2 L 56,6 Z", "#e7e9ec", INK, 1)
+        else:
+            g += R(30, -8, 50, 16, STEEL, INK, 1) + L(30, -3, 80, -3, INK, 0.5) + L(30, 3, 80, 3, INK, 0.5)
+        b.append(f'<g transform="translate({f(px)},{f(py)}) rotate({f(rot)})">{g}</g>')
+        lx, ly = px + tx * 84, py + ty * 84
+        b.append(T(lx, ly + 22, "출력 (비트 쪽)" if out else "입력 (IXO 7 쪽)", 12.5, 700, AMBER_D, "middle"))
+    # rotation indicators along the curve
+    for ang in range(-150, -20, 20):
+        px, py = pol(bcx, bcy, BR, ang)
+        rot = ang + 90
+        b.append(f'<g transform="translate({f(px)},{f(py)}) rotate({f(rot)})">'
+                 + P("M 0,-25 A 8 25 0 0 1 0,25", "none", AMBER, 2.4, 'marker-end="url(#arwA)" stroke-linecap="round"')
+                 + "</g>")
+    # relay arrow + text
+    b.append(arc(bcx, bcy, 160, -150, -32, AMBER_D, 1.4, "arwA").replace('stroke-linecap="round"', 'stroke-dasharray="5 4"'))
+    b.append(T(bcx, 320, "조각 → 조각으로 회전 릴레이", 13, 700, AMBER_D, "middle"))
+    # labels
+    sp = pol(bcx, bcy, BR + 18, -122)
+    b.append(leader(820, 186, sp[0], sp[1]) + T(732, 178, "외피 — 고정 (돌지 않음)", 13, 700))
+    cp = pol(bcx, bcy, BR, -62)
+    b.append(leader(1200, 186, cp[0], cp[1]) + T(1180, 178, "코어 — 제자리에서 자전", 13, 700))
+    # not-this inset (whirling bent rod)
+    ax0, ay0 = 965, 388
+    b.append(L(ax0 - 12, ay0, 1120, ay0, INK, 0.6, CL_DASH))
+    b.append(P(f"M {ax0},{ay0} L 1005,{ay0} Q 1040,{ay0} 1050,{ay0 - 26} L 1066,{ay0 - 46}", "none", STEEL_D, 6, 'stroke-linecap="round"'))
+    b.append(P(f"M {ax0},{ay0} L 1005,{ay0} Q 1040,{ay0} 1050,{ay0 + 26} L 1066,{ay0 + 46}", "none", STEEL_D, 6,
+               'stroke-linecap="round" stroke-opacity="0.45" stroke-dasharray="8 5"'))
+    b.append(P(f"M 1082,{ay0 - 46} A 14 46 0 0 1 1082,{ay0 + 46}", "none", INK, 1.4, 'marker-end="url(#arw)"'))
+    b.append(L(990, ay0 - 44, 1100, ay0 + 44, RED, 4, 'stroke-linecap="round"') + L(990, ay0 + 44, 1100, ay0 - 44, RED, 4, 'stroke-linecap="round"'))
+    b.append(T(bcx, 452, "휘어진 모양이 통째로 휘휘 도는 게 아니다", 12, 700, RED, "middle"))
+
+    # ---------------- C: one wire, one revolution
+    ccx, ccy, cr = 165, 668, 66
+    b.append(P(f"M {ccx - cr},{ccy} A {cr} {cr} 0 0 1 {ccx + cr},{ccy} Z", "#f6d5cf", "none", 0))
+    b.append(P(f"M {ccx - cr},{ccy} A {cr} {cr} 0 0 0 {ccx + cr},{ccy} Z", "#d6e3f5", "none", 0))
+    b.append(C(ccx, ccy, cr, "none", INK, 1.2) + L(ccx - cr - 8, ccy, ccx + cr + 8, ccy, INK, 0.7, 'stroke-dasharray="4 3"'))
+    b.append(T(ccx, 588, "굽힘 바깥쪽 — 늘어남 (+)", 12.5, 700, "#b4432f", "middle"))
+    b.append(T(ccx, 760, "굽힘 안쪽 — 눌림 (−)", 12.5, 700, BLUE, "middle"))
+    b.append(arc(ccx, ccy, 30, -70, 200, AMBER_D, 2, "arwA"))
+    for n, ang in ((1, -90), (2, 0), (3, 90), (4, 180)):
+        px, py = pol(ccx, ccy, 50, ang)
+        b.append(C(px, py, 9, AMBER, INK, 1) + T(px, py + 4, n, 11, 700, INK, "middle"))
+    gx0, gy0, amp = 300, 668, 58
+
+    def gx(a):
+        return gx0 + a * 0.5
+
+    b.append(L(gx0, gy0, gx(720) + 14, gy0, INK, 1, 'marker-end="url(#arw)"'))
+    b.append(L(gx0, gy0 + amp + 12, gx0, gy0 - amp - 18, INK, 1, 'marker-end="url(#arw)"'))
+    wave = " L ".join(f"{f(gx(a))},{f(gy0 - amp * math.cos(math.radians(a)))}" for a in range(0, 721, 6))
+    b.append(P("M " + wave, "none", AMBER_D, 2.4))
+    for a in (180, 360, 540, 720):
+        b.append(L(gx(a), gy0 - 4, gx(a), gy0 + 4, INK, 0.8))
+    for a in (0, 180, 360, 540, 720):
+        b.append(T(gx(a), 752, f"{a}°", 10.5, 400, MUTED, "middle"))
+    b.append(T(gx(720) + 12, 768, "회전각", 11.5, 600, INK, "end"))
+    b.append(T(gx0 + 8, gy0 - amp - 6, "+ 늘어남", 11, 700, "#b4432f") + T(gx0 + 8, gy0 + amp + 14, "− 눌림", 11, 700, BLUE))
+    for n, a in ((1, 0), (2, 90), (3, 180), (4, 270)):
+        px, py = gx(a), gy0 - amp * math.cos(math.radians(a))
+        b.append(C(px, py, 8, AMBER, INK, 1) + T(px, py + 4, n, 10, 700, INK, "middle"))
+    s, _ = para(60, 796, "한 바퀴마다 늘어남과 눌림이 반복된다. 와이어끼리 미끄러지며 마찰·열이 생기고 오래 쓰면 피로가 쌓인다. 곡선이 급할수록(R이 작을수록) 진폭이 커진다.",
+                610, 12.5, 17, "#33404f")
+    b.append(s)
+
+    # ---------------- D: wind-up
+    def shaft(y, twist, label):
+        cy, r = y + 13, 13
+        o = T(790, y - 10, label, 13, 700)
+        o += R(750, cy - 8, 40, 16, STEEL_D, INK, 1)
+        o += R(790, y, 440, 26, STEEL, INK, 1, 3) + L(792, y + 5, 1228, y + 5, "white", 2, 'stroke-opacity="0.7"')
+        o += R(1230, cy - 10, 26, 20, STEEL_D, INK, 1) + P(f"M 1256,{cy - 6} L 1274,{cy - 2} L 1280,{cy} L 1274,{cy + 2} L 1256,{cy + 6} Z", "#e7e9ec", INK, 1)
+        pts = " L ".join(f"{f(x)},{f(cy - (r - 2.5) * math.cos(math.radians(twist * (x - 790) / 440)))}"
+                         for x in range(790, 1231, 8))
+        o += P("M " + pts, "none", RED, 2.6, 'stroke-linecap="round"')
+        o += P(f"M 768,{cy - 20} A 8 20 0 0 1 768,{cy + 20}", "none", AMBER_D, 2.2, 'marker-end="url(#arwA)"')
+        return o
+
+    b.append(shaft(548, 0, "부하 없음 — 표시선이 곧다"))
+    b.append(shaft(626, 120, "부하 걸림 (나사가 빡빡함) — 표시선이 비틀린다"))
+    b.append(T(1286, 650, "θ 비틀림", 12, 700, RED))
+    for i, st in enumerate(["① 입력이 먼저 돌며 코어가 스프링처럼 비틀린다.",
+                            "② 비틀린 힘이 나사 저항을 넘는 순간 비트가 돌기 시작한다.",
+                            "③ 트리거를 놓으면 저장된 비틀림이 풀리며 살짝 되튕긴다."]):
+        b.append(T(732, 694 + i * 22, st, 13, 400, "#33404f"))
+    b.append(R(730, 758, 610, 66, "#fbf4e6", AMBER_D, 1, 6))
+    b.append(T(748, 782, "사용 팁", 13, 700, AMBER_D))
+    b.append(T(748, 806, "저속(트리거 살짝) · 완만한 곡선 · 마지막 조임은 본체 직결이나 스핀들 락 손 조임", 12.5, 500))
+
+    return sheet(5, "도면 5 — 곡선인데 어떻게 회전하나",
+                 "Flexible shaft · 곡선 상태에서 회전이 전달되는 원리   |   같은 원리: 배관 관통기 스프링 · 옛 자동차 속도계 케이블 · 로터리툴 연장축",
+                 "".join(b))
+
+
+NAMES = {1: "01-section", 2: "02-power-flow", 3: "03-planetary-gear", 4: "04-flexible-shaft", 5: "05-curved-rotation"}
+for i, fn in enumerate((sheet1, sheet2, sheet3, sheet4, sheet5), 1):
+    path = os.path.join(OUT, f"ixo7-{NAMES[i]}.svg")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(fn())
     print(path)
