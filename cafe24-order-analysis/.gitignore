@@ -1,0 +1,6 @@
+*.xlsx
+*.pdf
+.env
+token.json*
+authorize_url.txt*
+__pycache__/
