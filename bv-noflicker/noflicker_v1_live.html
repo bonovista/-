@@ -1,0 +1,22 @@
+<!-- BV-NOFLICKER v1 (2026-09-01) : 화면전환 깜빡임 차단. 전환 시작상태 + 상품명 파싱 클로크를 head에서 선적용. 롤백=이 블록 삭제 -->
+<script>
+(function(){var d=document,h=d.documentElement,c=" bv-cloak";
+try{if(sessionStorage.getItem("bvSlide")==="1"){sessionStorage.removeItem("bvSlide");c=" bv-slide"+c;}}catch(e){}
+h.className+=c+" bv-pcloak";
+function un(){h.classList.remove("bv-cloak");}
+function unp(){h.classList.remove("bv-pcloak");}
+var t2=setInterval(function(){var e=d.getElementById("span_product_price_text");if(e){var s=(e.textContent||"").trim();if(s===""||/[^0-9]/.test(s)){clearInterval(t2);unp();}}else if(d.readyState!=="loading"){clearInterval(t2);unp();}},30);
+setTimeout(function(){clearInterval(t2);unp();},2000);
+var t=setInterval(function(){if(d.querySelector(".bvp-brand")||d.readyState!=="loading"){clearInterval(t);un();}},30);
+setTimeout(function(){clearInterval(t);un();},1500);setTimeout(function(){h.classList.remove("bv-slide");},1800);})();
+</script>
+<style>
+@keyframes bvSlideUp{from{opacity:0;transform:translateY(110px)}to{opacity:1;transform:none}}
+html.bv-slide #contents,html.bv-slide #container:not(:has(#contents)){animation:bvSlideUp .75s cubic-bezier(.16,.84,.34,1) both;will-change:transform,opacity}
+@media (prefers-reduced-motion:reduce){html.bv-slide #contents,html.bv-slide #container{animation:none !important}}
+ul.prdList{transition:opacity .25s ease}
+html.bv-cloak ul.prdList{opacity:0}
+html.bv-pcloak #span_product_price_mobile_p_line,html.bv-pcloak #span_product_price_mobile_d_line{display:none !important}
+html.bv-pcloak #span_product_price_text{visibility:hidden}
+</style>
+<!-- /BV-NOFLICKER -->
