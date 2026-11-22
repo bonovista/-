@@ -39,11 +39,29 @@ demo = '''<div class="shots demo">
       </div>'''
 h = h[:shots] + demo + h[end:]
 
+# "영수증과 외상" gains the payment demo beside its list
+rh3 = h.find('<h3>영수증과 외상</h3>')
+rbody = h.rfind('<div class="body">', 0, rh3)
+assert rh3 != -1 and rbody != -1
+h = h[:rbody] + '<div class="body split two">' + h[rbody + len('<div class="body">'):]
+rh3 = h.find('<h3>영수증과 외상</h3>')
+txt_end = h.find('</ul>', rh3)
+txt_end = h.find('</div>', txt_end) + len('</div>')
+pay = '''
+      <div class="shots demo">
+        <figure>
+          <div id="bv-payment-demo" class="demo-stage demo-stage--payment" role="img" aria-label="쓴 돈 기록 화면 아래쪽. 결제에서 현금을 누르면 지출증빙용 현금영수증을 요청하라는 안내와 사업자번호가 나오고, 복사를 누르면 복사됨으로 바뀌고, 증빙에서 지출증빙 현금영수증을 고릅니다."></div>
+          <figcaption class="demo-cap"><span>결제부터 증빙까지</span><button type="button" id="bv-payment-replay" class="replay">다시 보기</button></figcaption>
+        </figure>
+      </div>'''
+h = h[:txt_end] + pay + h[txt_end:]
+
 # Figure rules for the demo, at the end of the page's own stylesheet
 rules = '''
 .shots.demo { display: block; overflow: visible; padding-bottom: 0; }
 .shots.demo figure { flex: none; width: 100%; display: grid; gap: 6px; }
 .demo-stage { min-height: 600px; }
+.demo-stage--payment { min-height: 582px; }
 .demo-cap { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; line-height: 1.5; color: var(--mute); }
 .replay { font: 600 14px/1 var(--sans); color: var(--ink); background: none; border: 0; padding: 0 2px; min-height: 40px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .replay:hover { color: var(--accent); }
@@ -51,6 +69,7 @@ rules = '''
   .body.split.two .shots.demo { width: 572px; }
   .body.split .shots.demo figure { width: 100%; }
   .demo-stage { min-height: 680px; }
+  .demo-stage--payment { min-height: 630px; }
 }
 '''
 first_style_end = h.find('</style>', h.find('<style>', h.find('<title>')))
@@ -58,7 +77,7 @@ h = h[:first_style_end] + rules + h[first_style_end:]
 
 css = open(f'{dist}/bv-expense.css', encoding='utf8').read()
 js = open(f'{dist}/bv-expense.js', encoding='utf8').read().replace('</script', '<\\/script')
-h = h.rstrip() + f'\n<style>\n/* Stageshow demo (bv-expense) */\n{css}\n</style>\n<script>\n{js}\n</script>\n'
+h = h.rstrip() + f'\n<style>\n/* Stageshow demos (bv-expense, bv-payment) */\n{css}\n</style>\n<script>\n{js}\n</script>\n'
 
 open(out_path, 'w', encoding='utf8').write(h)
 print('written', out_path, len(h.encode()) // 1024, 'KB')

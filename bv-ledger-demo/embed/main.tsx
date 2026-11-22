@@ -1,11 +1,12 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, useEffect, useState, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
-import Expense from '../examples/bv-expense'  // expense/ is copied to examples/bv-expense/ in a Stageshow working copy
+import Expense from '../examples/bv-expense'  // expense/ is copied to examples/bv-expense/
+import Payment from '../examples/bv-payment'  // payment/ is copied to examples/bv-payment/
 
-// Mounts the expense demo into the staff guide. The replay button sits in the
-// figure's caption, outside the stage, and remounts the demo at its story
+// Mounts the ledger demos into the staff guide. Each figure's replay button
+// sits in its caption, outside the stage, and remounts that demo at its story
 // boundary (kit.md, Explicit replay).
-function WithReplay({ button }: { button: HTMLElement | null }) {
+function WithReplay({ Demo, button }: { Demo: ComponentType; button: HTMLElement | null }) {
   const [run, setRun] = useState(0)
   useEffect(() => {
     if (!button) return
@@ -13,17 +14,24 @@ function WithReplay({ button }: { button: HTMLElement | null }) {
     button.addEventListener('click', replay)
     return () => button.removeEventListener('click', replay)
   }, [button])
-  return <Expense key={run} />
+  return <Demo key={run} />
 }
 
+const DEMOS: [string, ComponentType][] = [
+  ['bv-expense', Expense],
+  ['bv-payment', Payment],
+]
+
 function mount() {
-  const host = document.getElementById('bv-expense-demo')
-  if (!host) return
-  createRoot(host).render(
-    <StrictMode>
-      <WithReplay button={document.getElementById('bv-expense-replay')} />
-    </StrictMode>,
-  )
+  for (const [id, Demo] of DEMOS) {
+    const host = document.getElementById(`${id}-demo`)
+    if (!host) continue
+    createRoot(host).render(
+      <StrictMode>
+        <WithReplay Demo={Demo} button={document.getElementById(`${id}-replay`)} />
+      </StrictMode>,
+    )
+  }
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount)

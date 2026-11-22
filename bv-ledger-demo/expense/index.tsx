@@ -99,7 +99,7 @@ export default function Expense() {
               <span className="bv-close">닫기</span>
             </div>
 
-            <div className="bv-body">
+            <form className="bv-body">
               <section className="bv-sec">
                 <Label>금액</Label>
                 {/* A right-aligned amount steps left a digit at a time as it is typed, as the real input does */}
@@ -150,7 +150,7 @@ export default function Expense() {
               <Filler label={30} cells={[44, 70, 34]} />
               <Filler label={30} cells={[34, 82, 56]} />
               <Filler label={30} cells={[60, 48, 66]} />
-            </div>
+            </form>
           </div>
         </Phone>
       )}
