@@ -14,7 +14,9 @@ if body_at != -1:
 h = re.sub(r'</body>\s*</html>\s*$', '', h)
 
 # Name the preview apart from the live guide
-h = h.replace('<title>온라인 비용 장부 사용 안내</title>', '<title>비용 장부 안내 시안</title>', 1)
+# A preview is named apart from the live guide; the live publish keeps its name
+if not (len(sys.argv) > 5 and sys.argv[5] == 'live'):
+    h = h.replace('<title>온라인 비용 장부 사용 안내</title>', '<title>비용 장부 안내 시안</title>', 1)
 
 # One Pretendard subset for the guide and the demo: 400, 500, 600
 def face(weight, name):
