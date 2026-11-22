@@ -1,0 +1,4 @@
+/* Pretendard subset (guide + demo text) for the playground; the guide page supplies its own */
+@font-face { font-family: 'Pretendard'; src: url('./P-Regular.woff2') format('woff2'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'Pretendard'; src: url('./P-Medium.woff2') format('woff2'); font-weight: 500; font-display: block; }
+@font-face { font-family: 'Pretendard'; src: url('./P-SemiBold.woff2') format('woff2'); font-weight: 600; font-display: block; }
