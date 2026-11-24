@@ -361,7 +361,7 @@ function renderKpis(){
     if(!S.db){ box.append(h("div","val num","—"), h("div","cap",S.dbState==="pending"?"불러오는 중":"저장소를 쓸 수 없는 화면입니다")); continue; }
     if(!d){ box.append(h("div","val num","—"), h("div","cap","아직 기록이 없습니다")); }
     else{
-      const v=h("div","val num", d.value==null ? "—" : Number(d.value).toLocaleString("ko-KR"));
+      const v=h("div","val num", d.value==null ? "—" : d.approx ? new Intl.NumberFormat("ko-KR",{notation:"compact",maximumFractionDigits:1}).format(d.value) : Number(d.value).toLocaleString("ko-KR"));
       if(d.value!=null && d.unit) v.append(h("small",null,d.unit));
       box.append(v, h("div","cap", d.caption||""));
       if(d.value!=null && d.prev!=null && d.prev!==d.value){
@@ -387,7 +387,7 @@ function editKpi(box,k){
     e.preventDefault(); const nv=inp.value===""?null:Number(inp.value); if(nv!=null && !isFinite(nv)) return;
     ok.disabled=true;
     try{
-      const body={...d, value:nv, prev: d.value??null, asOf: todayYMD()};
+      const body={...d, value:nv, prev: d.value??null, asOf: todayYMD(), approx:false};
       await S.db.doc("kpi/"+k).set(body);
     }catch(err){ renderKpis(); box.append(h("div","note err","저장하지 못했습니다. 편집 권한이 필요합니다.")); }
   });
