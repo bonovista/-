@@ -166,6 +166,22 @@ a.tbtn{text-decoration:none}
 .private .mail .main{filter:blur(6px);user-select:none}
 .foot{font-size:var(--fs-xs);color:var(--fg-3);margin-top:8px}
 
+/* showroom ledger */
+.lg-head{display:flex;align-items:center;gap:8px;font-size:var(--fs-s);color:var(--fg-2)}
+.lg-head .pill{margin-left:auto}
+.lg-big{font-weight:600;font-size:var(--fs-xl);line-height:1.15;margin-top:6px;letter-spacing:-.01em}
+.lg-big small{font-size:var(--fs-s);font-weight:400;color:var(--fg-2);margin-left:2px}
+.lg-cap{font-size:var(--fs-xs);color:var(--fg-3);margin-top:2px;line-height:1.5}
+.lg-sec{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+.lg-sec .h{font-size:var(--fs-xs);color:var(--fg-3);margin-bottom:2px}
+.lg-kv{display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:var(--fs-m)}
+.lg-kv .k{flex:1;min-width:0;color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg-kv .v{font-weight:600}
+.lg-kv .c{width:40px;flex:none;text-align:right;font-size:var(--fs-xs);color:var(--fg-3)}
+.lg-kv.zero .k,.lg-kv.zero .v{color:var(--fg-3);font-weight:400}
+.lg-kv.sum{border-top:1px solid var(--line);margin-top:3px;padding-top:6px}
+#ledger .btn{margin-top:8px}
+
 /* skills */
 .search{display:flex;align-items:center;gap:6px;flex:1;min-width:0;background:var(--bg-2);border:1px solid var(--line);padding:4px 8px;color:var(--fg-3)}
 .search input{background:none;border:0;outline:0;min-width:0;width:100%;font-size:var(--fs-s);color:var(--fg)}
@@ -214,6 +230,7 @@ a.tbtn{text-decoration:none}
     <span class="conn" id="conn-mail" data-s="wait"><i></i>Gmail</span>
     <span class="conn" id="conn-cal" data-s="wait"><i></i>캘린더</span>
     <span class="conn" id="conn-cc" data-s="wait"><i></i>Claude Code</span>
+    <span class="conn" id="conn-ledger" data-s="wait"><i></i>장부</span>
   </div>
   <span class="clock num" id="clock"></span>
 </header>
@@ -229,7 +246,7 @@ a.tbtn{text-decoration:none}
     <section class="panel" id="sec-ledger">
       <div class="ph"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 2.5h7l2 2v9h-9z"/><path d="M5.5 6.5h5M5.5 9h5M5.5 11.5h3"/></svg><h2>쇼룸 장부</h2><span class="meta">ledger.bonovista.com</span>
         <span class="act"><a class="tbtn" href="https://ledger.bonovista.com" target="_blank" rel="noopener">장부 열기 ↗</a></span></div>
-      <div id="ledger"><div class="empty">오늘 매출·손님 수·베이거 재고 경고가 이 칸에 뜹니다. 장부 데이터는 Supabase에 있어서, claude.ai에 Supabase 커넥터를 연결하면 Claude가 이 칸을 채웁니다. 그 전까지는 '장부 열기'로 앱을 바로 엽니다.</div></div>
+      <div id="ledger"><div class="empty">불러오는 중</div></div>
     </section>
 
     <section class="panel" id="sec-goals">
@@ -354,7 +371,8 @@ const S = {
   db:null, dbState:"pending", mcp:null, canRunCloud:false,
   kpis:{}, goals:[], skills:[], runs:{}, routines:[], routinesOff:0, sessions:[],
   mailCount:null, filter:null, q:"", openSkill:null,
-  calMonth:null, calEvents:[], calSel:null, calUnsub:null, calSt:{n:"loading"}, calMonthCount:0
+  calMonth:null, calEvents:[], calSel:null, calUnsub:null, calSt:{n:"loading"}, calMonthCount:0,
+  ledger:null, ledgerAt:0, ledgerErr:null, ledgerManual:false, ledgerBusy:false
 };
 
 /* ---------- clock ---------- */
@@ -654,6 +672,201 @@ function renderRoutines(err){
   $("#routines-foot").textContent = S.routinesOff ? `꺼진 루틴 ${S.routinesOff}개는 숨겼습니다.` : "";
 }
 
+/* ---------- showroom ledger (Supabase) ---------- */
+/* ledger.bonovista.com keeps its books in this Supabase project. One read-only SELECT, in KST:
+   today, the last day with sales before today, this month, and 베이거 items to check.
+   매출 = 보노비스타 + 위탁 lines (보타 excluded, the same basis as the app's 통계);
+   받은 방법 and 합계 are what the till took, 보타 included (the app's day_totals). */
+const LEDGER_PROJECT = "uiwoqstleungmevssedl";
+const LEDGER_EVERY = 300000;
+const LEDGER_SQL = `with k as (select (now() at time zone 'Asia/Seoul')::date as d),
+dd as (
+  select 'today'::text as key, k.d as day from k
+  union all
+  select 'prev', (select max(x.sold_on) from public.sales x, k where x.sold_on < k.d)
+),
+days as (
+  select dd.key, jsonb_build_object(
+    'day', to_char(dd.day, 'YYYY-MM-DD'),
+    'sales', coalesce(l.sales, 0), 'bota', coalesce(l.bota, 0), 'qty', coalesce(l.qty, 0),
+    'paid', s.paid, 'n', s.n, 'refund_n', s.refund_n, 'refund', s.refund,
+    'card', s.card, 'transfer', s.transfer, 'cash', s.cash,
+    'card_n', s.card_n, 'transfer_n', s.transfer_n, 'cash_n', s.cash_n, 'split_n', s.split_n,
+    'visit_m', vv.m, 'visit_f', vv.f,
+    'closed', exists (select 1 from public.closings c where c.day = dd.day)) as o
+  from dd
+  left join lateral (
+    select sum(v.sign * v.amount) filter (where src.kind in ('own', 'consign')) as sales,
+           sum(v.sign * v.amount) filter (where v.source_id = 'bota') as bota,
+           sum(v.sign * v.qty) filter (where src.kind in ('own', 'consign')) as qty
+      from public.v_lines v join public.sources src on src.id = v.source_id
+     where v.day = dd.day) l on true
+  left join lateral (
+    select count(*) filter (where kind = 'sale') as n,
+           count(*) filter (where kind = 'refund') as refund_n,
+           coalesce(sum(total) filter (where kind = 'refund'), 0) as refund,
+           coalesce(sum(case when kind = 'refund' then -total else total end), 0) as paid,
+           coalesce(sum(case when kind = 'refund' then -pay_card else pay_card end), 0) as card,
+           coalesce(sum(case when kind = 'refund' then -pay_transfer else pay_transfer end), 0) as transfer,
+           coalesce(sum(case when kind = 'refund' then -pay_cash else pay_cash end), 0) as cash,
+           count(*) filter (where kind = 'sale' and method = 'card') as card_n,
+           count(*) filter (where kind = 'sale' and method = 'transfer') as transfer_n,
+           count(*) filter (where kind = 'sale' and method = 'cash') as cash_n,
+           count(*) filter (where kind = 'sale' and method = 'split') as split_n
+      from public.sales where sold_on = dd.day) s on true
+  left join lateral (
+    select coalesce(sum(n) filter (where gender = '남'), 0) as m,
+           coalesce(sum(n) filter (where gender = '여'), 0) as f
+      from public.visits where day = dd.day and undone_at is null) vv on true
+  where dd.day is not null
+),
+mo as (select date_trunc('month', d)::date as m0, (date_trunc('month', d) + interval '1 month')::date as m1 from k),
+al as (
+  select i.name, i.price, st.book::int as book, case when st.book < 0 then 'neg' else 'chk' end as flag
+    from public.items i
+    join public.item_stock st on st.item_id = i.id
+    join public.sources src on src.id = i.source_id
+   where src.stock_managed and i.status <> '단종'
+     and (st.book < 0
+          or exists (select 1 from public.stock_moves m where m.item_id = i.id and m.resolved = false)
+          or exists (select 1 from public.return_lines r where r.item_id = i.id and r.resolved = false))
+)
+select jsonb_build_object(
+  'today', (select o from days where key = 'today'),
+  'prev',  (select o from days where key = 'prev'),
+  'month', (select jsonb_build_object(
+              'label', to_char(mo.m0, 'YYYY-MM'),
+              'sales', coalesce(sum(v.sign * v.amount) filter (where src.kind in ('own', 'consign')), 0),
+              'bota',  coalesce(sum(v.sign * v.amount) filter (where v.source_id = 'bota'), 0),
+              'n',     (select count(*) from public.sales x where x.sold_on >= mo.m0 and x.sold_on < mo.m1 and x.kind = 'sale'))
+              from mo
+              left join public.v_lines v on v.day >= mo.m0 and v.day < mo.m1
+              left join public.sources src on src.id = v.source_id
+             group by mo.m0, mo.m1),
+  'stock', jsonb_build_object(
+    'count', (select count(*) from al),
+    'items', (select coalesce(jsonb_agg(jsonb_build_object('name', name, 'price', price, 'book', book, 'flag', flag) order by flag desc, book, price), '[]'::jsonb)
+                from (select * from al order by flag desc, book, price limit 5) a))
+) as d`;
+const num = v => Number(v)||0;
+const won = v => Math.round(num(v)).toLocaleString("ko-KR");
+const signed = v => { const n=Math.round(num(v)); return (n<0?"−":"")+Math.abs(n).toLocaleString("ko-KR"); };
+function dayLabel(ymd){
+  const [y,m,d]=String(ymd||"").split("-").map(Number); if(!y||!m||!d) return "";
+  return `${m}.${d} (${new Intl.DateTimeFormat("ko-KR",{weekday:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d)))})`;
+}
+/* execute_sql answers {result:"…<untrusted-data-ID>[{"d":{…}}]</untrusted-data-ID>…"}; the rows sit between the two ID tags */
+function parseLedger(p){
+  let t=p;
+  if(t && typeof t==="object" && !Array.isArray(t)) t = typeof t.result==="string" ? t.result : (Array.isArray(t.result) ? t.result : t);
+  let rows=t;
+  if(typeof t==="string"){
+    const m=t.match(/<untrusted-data-([\w-]+)>([\s\S]*)<\/untrusted-data-\1>/);
+    try{ rows=JSON.parse((m?m[2]:t).trim()); }catch(e){ return null; }
+  }
+  const r=Array.isArray(rows)?rows[0]:rows; let d=r&&r.d;
+  if(typeof d==="string"){ try{ d=JSON.parse(d); }catch(e){ return null; } }
+  return (d && typeof d==="object" && d.today && typeof d.today==="object") ? d : null;
+}
+function lkv(k, v, c, cls){ const r=h("div","lg-kv"+(cls?" "+cls:"")); r.append(h("span","k",k), h("span","v num",v), h("span","c num",c||"")); return r; }
+function ledgerButton(label){
+  const b=h("button","btn ghost",label); b.type="button"; b.disabled=S.ledgerBusy;
+  b.addEventListener("click",()=>{ loadLedgerOnce(); });
+  return b;
+}
+function renderLedger(){
+  const box=$("#ledger"); box.replaceChildren();
+  const L=S.ledger;
+  if(!L){
+    box.append(S.ledgerErr ? h("div","note err",S.ledgerErr) : h("div","empty","불러오는 중"));
+    if(S.ledgerManual) box.append(ledgerButton(S.ledgerBusy?"불러오는 중…":"장부 불러오기"));
+    return;
+  }
+  const T=L.today||{}, active=num(T.n)+num(T.refund_n)+num(T.visit_m)+num(T.visit_f)>0;
+  const live = active || !L.prev || typeof L.prev!=="object", D = live ? T : L.prev;
+  const hd=h("div","lg-head"); hd.append(h("span",null,`${live?"오늘":"지난 영업일"} · ${dayLabel(D.day)}`));
+  hd.append(D.closed ? h("span","pill","마감 완료") : live ? h("span","pill","마감 전") : h("span","pill block","마감 안 됨"));
+  box.append(hd);
+  if(!live) box.append(h("div","lg-cap","오늘은 아직 기록이 없어 지난 영업일 장부를 보여 드립니다."));
+  const big=h("div","lg-big num",won(D.sales)); big.append(h("small",null,"원 매출")); box.append(big);
+  const cap=[`판매 ${num(D.n)}건`, `${num(D.qty)}점`]; if(num(D.bota)) cap.push(`보타 ${won(D.bota)}원 별도`);
+  box.append(h("div","lg-cap num",cap.join(" · ")));
+
+  const pay=h("div","lg-sec"); pay.append(h("div","h", num(D.bota) ? "받은 방법 · 보타 포함" : "받은 방법"));
+  for(const [lab,key] of [["카드","card"],["계좌이체","transfer"],["현금","cash"]]){
+    const v=num(D[key]), c=num(D[key+"_n"]);
+    pay.append(lkv(lab, `${signed(v)}원`, c?`${c}건`:"", (!v&&!c)?"zero":""));
+  }
+  if(num(D.refund_n)) pay.append(lkv("환불", `−${won(D.refund)}원`, `${num(D.refund_n)}건`));
+  pay.append(lkv("합계", `${signed(D.paid)}원`, "", "sum"));
+  if(num(D.split_n)) pay.append(h("div","lg-cap",`나눠 받은 ${num(D.split_n)}건은 수단별 금액에 나눠 더했습니다.`));
+  box.append(pay);
+
+  const vm=num(D.visit_m), vf=num(D.visit_f), vt=vm+vf;
+  const vs=h("div","lg-sec"); vs.append(h("div","h","손님"));
+  vs.append(lkv(`남 ${vm} · 여 ${vf}`, `${vt}명`, "", vt?"":"zero"));
+  if(vt) vs.append(h("div","lg-cap num",`판매율 ${Math.round(num(D.qty)/vt*100)}% · ${num(D.qty)}점 ÷ ${vt}명 (보타 제외)`));
+  box.append(vs);
+
+  const M=L.month||{}, mm=Number(String(M.label||"").split("-")[1]);
+  const ms=h("div","lg-sec"); ms.append(h("div","h",`${mm?mm+"월":"이번 달"} 누적`));
+  ms.append(lkv("매출", `${won(M.sales)}원`, `${num(M.n)}건`));
+  if(num(M.bota)) ms.append(lkv("보타 별도", `${won(M.bota)}원`, ""));
+  box.append(ms);
+
+  const SK=L.stock||{}, items=Array.isArray(SK.items)?SK.items:[], cnt=num(SK.count);
+  const ss=h("div","lg-sec"); ss.append(h("div","h", cnt?`베이거 재고 확인 ${cnt}개`:"베이거 재고"));
+  if(!cnt) ss.append(h("div","lg-cap","마이너스 재고나 확인할 입고가 없습니다."));
+  for(const it of items.slice(0,5)){
+    const neg=it.flag==="neg", r=h("div","row"), main=h("div","main");
+    main.append(h("div","t1",it.name||"이름 없는 품목"), h("div","t2 num",`${won(it.price)}원 · 장부 재고 ${signed(it.book)}`));
+    r.append(main, h("span","pill "+(neg?"block":""), neg?"확인":"확인 필요")); ss.append(r);
+  }
+  if(cnt>Math.min(5,items.length)) ss.append(h("div","lg-cap",`나머지 ${cnt-Math.min(5,items.length)}개는 장부 앱의 위탁 재고에서 봅니다.`));
+  box.append(ss);
+
+  if(S.ledgerErr) box.append(h("div","note err",S.ledgerErr+" 아래 시각에 받은 숫자입니다."));
+  const at=new Date(S.ledgerAt||Date.now());
+  const foot=h("div","foot num",`${ymdKST(at)===todayYMD()?"":mdKST(at)+" "}${hmKST(at)} 기준${S.ledgerManual?"":" · 5분마다 새로 고칩니다"}`);
+  box.append(foot);
+  if(S.ledgerManual) box.append(ledgerButton(S.ledgerBusy?"불러오는 중…":"새로 고침"));
+}
+function ledgerData(res, fromWatch){
+  const d=parseLedger(res&&res.payload);
+  if(!d){ if(!S.ledger) S.ledgerErr="장부 응답을 읽지 못했습니다. '장부 열기'로 앱에서 확인해 주세요."; }
+  else{ S.ledger=d; S.ledgerAt=(res.cache&&res.cache.storedAt)||Date.now(); S.ledgerErr=null; if(fromWatch) S.ledgerManual=false; }
+  setConn("conn-ledger", S.ledger?"ok":"err"); renderLedger();
+}
+function ledgerError(er){
+  er=er||{};
+  if(er.code==="approval_required"){
+    // this call needs the viewer's OK, which only a click-driven callTool can ask for: stop polling, offer a button
+    S.ledgerManual=true; S.ledgerErr = S.ledger ? "새 숫자를 받으려면 '새로 고침'을 눌러 허용해 주세요." : "장부를 읽으려면 Supabase 호출을 한 번 허용해 주셔야 합니다. 아래 버튼을 눌러 주세요.";
+  }else if(AUTHZ.has(er.code)){ S.ledger=null; S.ledgerErr=mcpMessage(er,"Supabase"); }
+  else S.ledgerErr=mcpMessage(er,"Supabase");   // transient: keep the last good numbers on screen
+  setConn("conn-ledger", S.ledger?"ok":"err"); renderLedger();
+}
+const ledgerInput = () => ({project_id:LEDGER_PROJECT, query:LEDGER_SQL});
+function loadLedgerOnce(){
+  if(!S.mcp || S.ledgerBusy) return Promise.resolve();
+  S.ledgerBusy=true; if(S.ledgerManual) renderLedger();
+  return S.mcp.callTool("Supabase","execute_sql",ledgerInput()).then(ledgerData, ledgerError).finally(()=>{ S.ledgerBusy=false; if(S.ledgerManual) renderLedger(); });
+}
+function watchLedger(){
+  let fellBack=false;
+  S.mcp.watchTool("Supabase","execute_sql",ledgerInput(),ev=>{
+    if(ev.type==="data") return ledgerData(ev.result, true);
+    const er=ev.error||{};
+    if(er.code==="bad_request" && !fellBack){
+      // execute_sql is not marked read-only, so the watch can be refused: read with callTool on the same 5-minute beat
+      fellBack=true; loadLedgerOnce();
+      setInterval(()=>{ if(!document.hidden && !S.ledgerManual) loadLedgerOnce(); }, LEDGER_EVERY);
+      return;
+    }
+    ledgerError(er);
+  },{refetchInterval:LEDGER_EVERY});
+}
+
 /* ---------- brain (canvas) ---------- */
 const B = { cv:null, ctx:null, w:0, h:0, dpr:1, clusters:[], hubs:[], t:0, raf:0, hover:null, still:matchMedia("(prefers-reduced-motion: reduce)").matches };
 /* power saving: after a minute without pointer or keyboard activity (or when pinned on),
@@ -802,6 +1015,8 @@ function wireMcp(mcp){
   },{refetchInterval:300000});
   // calendar
   watchCal();
+  // showroom ledger
+  watchLedger();
   // routines
   mcp.watchTool("Claude Code Remote","list_triggers",{limit:50},ev=>{
     if(ev.type==="data"){
@@ -824,7 +1039,8 @@ function wireMcp(mcp){
 function noMcp(){
   const m="이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에서 열면 메일·캘린더·루틴이 연결됩니다.";
   renderMail([],m); renderRoutines(m); renderSessions(m); S.calSt={n:m}; renderCal();
-  ["conn-mail","conn-cal","conn-cc"].forEach(id=>setConn(id,"err"));
+  S.ledgerErr="이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에서 열면 장부 숫자가 뜨고, 그 전까지는 '장부 열기'로 앱을 엽니다."; renderLedger();
+  ["conn-mail","conn-cal","conn-cc","conn-ledger"].forEach(id=>setConn(id,"err"));
 }
 
 initCal(); initBrain(); renderKpis(); renderGoals(); renderSkills(); updateMeta();
