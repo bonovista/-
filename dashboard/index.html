@@ -244,7 +244,7 @@ a.tbtn{text-decoration:none}
     </section>
 
     <section class="panel" id="sec-cal">
-      <div class="ph"><svg class="i" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><h2>캘린더</h2><span class="meta">보노 캘린더 · Google</span>
+      <div class="ph"><svg class="i" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><h2>캘린더</h2><span class="meta">노션 캘린더</span>
         <span class="act"><button class="tbtn" id="cal-prev" type="button" aria-label="이전 달"><svg class="i" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><span class="num" id="cal-month" style="font-size:var(--fs-s)"></span><button class="tbtn" id="cal-next" type="button" aria-label="다음 달"><svg class="i" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></button></span></div>
       <div class="cal-head" aria-hidden="true"><span></span><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>주간 일정</span><span></span></div>
       <div id="cal-grid"></div>
@@ -354,7 +354,7 @@ const S = {
   db:null, dbState:"pending", mcp:null, canRunCloud:false,
   kpis:{}, goals:[], skills:[], runs:{}, routines:[], routinesOff:0, sessions:[],
   mailCount:null, filter:null, q:"", openSkill:null,
-  calMonth:null, calEvents:[], calSel:null, calUnsub:null, calUnsubN:null, calG:[], calN:[], calSt:{n:"loading",g:"loading"}, calMonthCount:0
+  calMonth:null, calEvents:[], calSel:null, calUnsub:null, calSt:{n:"loading"}, calMonthCount:0
 };
 
 /* ---------- clock ---------- */
@@ -441,33 +441,33 @@ function initCal(){
   $("#cal-next").addEventListener("click",()=>shiftMonth(1));
   renderCal();
 }
-const BONO_CAL = "collection://a00f00f6-eb71-4132-877f-269ae02412eb"; // Notion: 보노 캘린더 (team schedule)
 function shiftMonth(n){ let {y,m}=S.calMonth; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} S.calMonth={y,m}; S.calSel=`${y}-${String(m+1).padStart(2,"0")}-01`; if(y+"-"+String(m+1).padStart(2,"0")===todayYMD().slice(0,7)) S.calSel=todayYMD(); watchCal(); renderCal(); }
 function addDays(ymd,k){ const d=new Date(ymd+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+k); return d.toISOString().slice(0,10); }
 const isYmd = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
 const toYmd = v => isYmd(v) ? v : ymdKST(new Date(v));
-function mergeCal(){
-  const out=[];
-  for(const r of S.calN){
-    const k = r["date:날짜:start"] ? "날짜" : (r["date:날짜 1:start"] ? "날짜 1" : null); if(!k) continue;
-    const s=r[`date:${k}:start`], e=r[`date:${k}:end`]||null, dt=r[`date:${k}:is_datetime`]===1 && !isYmd(s);
-    out.push({s,e,allDay:!dt,excl:false,title:r["이름"]||"(제목 없음)",link:safeUrl(r.url),src:"노션"});
-  }
-  for(const g of S.calG){
-    const st=g.start||g.startTime, en=g.end||g.endTime;
-    const s=st&&typeof st==="object"?(st.dateTime||st.date):st, e=en&&typeof en==="object"?(en.dateTime||en.date):en;
-    if(!s) continue; const ad=isYmd(s);
-    out.push({s,e:e||null,allDay:ad,excl:ad,title:g.summary||g.title||"(제목 없음)",link:safeUrl(g.htmlLink||g.html_link),src:"Google"});
+/* Notion Calendar answer: {accounts:[{providerName, calendars:[{name,isPrimary,events:[{summary,webUrl,period:{type,start,end}}]}]}]}
+   all-day events (period.type "DATE") end on the day after they finish */
+function mergeCal(p){
+  const out=[], pick=o=>o&&typeof o==="object"?(o.date||o.dateTime||o.datetime):o;
+  for(const acc of (p&&Array.isArray(p.accounts)?p.accounts:[])){
+    for(const cal of (Array.isArray(acc.calendars)?acc.calendars:[])){
+      const src = acc.providerName==="notion" ? (cal.name||"노션") : (cal.isPrimary ? "Google" : (cal.name||"Google"));
+      for(const ev of (Array.isArray(cal.events)?cal.events:[])){
+        const per=ev.period||{}, s=pick(per.start||ev.start), e=pick(per.end||ev.end); if(!s) continue;
+        const allDay = per.type==="DATE" || isYmd(s);
+        out.push({s, e:e||null, allDay, excl:allDay, title:ev.summary||"(제목 없음)", link:safeUrl(ev.webUrl), src});
+      }
+    }
   }
   S.calEvents=out;
 }
 function evDays(ev){
   let a,b; try{ a=toYmd(ev.s); b=ev.e?toYmd(ev.e):a; }catch(e){ return []; }
   if(!isYmd(a)) return []; if(!isYmd(b)||b<a) b=a;
-  if(ev.excl && b>a) b=addDays(b,-1);
+  if(b>a && (ev.excl || (!ev.allDay && hmKST(new Date(ev.e))==="00:00"))) b=addDays(b,-1);
   const out=[]; for(let c=a,n=0; c<=b && n<62; c=addDays(c,1),n++) out.push(c); return out;
 }
-function calStatus(){ const v=[S.calSt.n,S.calSt.g]; return {loading:v.every(x=>x==="loading"), ok:v.some(x=>x==="ok"), errs:v.filter(x=>x && x!=="ok" && x!=="loading")}; }
+function calStatus(){ const v=S.calSt.n; return {loading:v==="loading", ok:v==="ok", errs:(v&&v!=="ok"&&v!=="loading")?[v]:[]}; }
 function renderCal(){
   const {y,m}=S.calMonth; $("#cal-month").textContent=monthKey(y,m);
   const mp=`${y}-${String(m+1).padStart(2,"0")}`, byDay={}; let monthCount=0;
@@ -507,40 +507,23 @@ function renderCal(){
 }
 function watchCal(){
   if(!S.mcp) return;
-  for(const u of [S.calUnsub,S.calUnsubN]) if(u){ try{u();}catch(e){} }
-  S.calUnsub=S.calUnsubN=null; S.calG=[]; S.calN=[]; mergeCal();
+  if(S.calUnsub){ try{S.calUnsub();}catch(e){} S.calUnsub=null; }
+  S.calEvents=[];
   const {y,m}=S.calMonth; const ny=m===11?y+1:y, nm=m===11?0:m+1;
-  const first=`${y}-${String(m+1).padStart(2,"0")}-01`, next=`${ny}-${String(nm+1).padStart(2,"0")}-01`, last=addDays(next,-1);
-  S.calSt={n:"loading",g:"loading"};
-  const apply=(src,label,p,er)=>{
-    if(p!==undefined){
-      if(src==="g"){ const l=Array.isArray(p)?p:(p&&(p.events||p.items||p.data))||[]; S.calG=Array.isArray(l)?l:[]; }
-      else { const l=(p&&(p.results||p.rows||p.data))||[]; S.calN=Array.isArray(l)?l:[]; }
-      S.calSt[src]="ok";
-    }else if(er){
-      if(AUTHZ.has(er.code)){ if(src==="g") S.calG=[]; else S.calN=[]; S.calSt[src]=mcpMessage(er,label); }
-      else if(S.calSt[src]!=="ok") S.calSt[src]=mcpMessage(er,label);
-    }
-    mergeCal(); const st=calStatus(); setConn("conn-cal", st.ok?"ok":(st.loading?"wait":"err")); renderCal(); updateMeta();
-  };
-  const range={type:"exact",value:{type:"daterange",start_date:first,end_date:last}};
-  const nIn={data:{mode:"rows",data_source_url:BONO_CAL,
-    filter:{type:"group",operator:"or",filters:[
-      {type:"property",property:"날짜",propertyType:"date",operator:"date_is_within",value:range},
-      {type:"property",property:"날짜",propertyType:"date",operator:"date_is_within",use_end:true,value:range}]},
-    sort:[{property:"날짜",direction:"ascending"}], limit:100}};
+  const first=`${y}-${String(m+1).padStart(2,"0")}-01`, next=`${ny}-${String(nm+1).padStart(2,"0")}-01`;
+  S.calSt={n:"loading"};
+  const label="노션 캘린더";
+  const done=()=>{ const st=calStatus(); setConn("conn-cal", st.ok?"ok":(st.loading?"wait":"err")); renderCal(); updateMeta(); };
+  const input={timeMin:`${first}T00:00:00+09:00`, timeMax:`${next}T00:00:00+09:00`, timeZone:TZ};
   let fellBack=false;
-  S.calUnsubN = S.mcp.watchTool("Notion","notion-query-data-sources",nIn,ev=>{
-    if(ev.type==="data") return apply("n","노션 보노 캘린더",ev.result&&ev.result.payload);
+  S.calUnsub = S.mcp.watchTool("Notion","notion-calendar-list-events",input,ev=>{
+    if(ev.type==="data"){ mergeCal(ev.result&&ev.result.payload); S.calSt.n="ok"; return done(); }
     const er=ev.error||{};
     if(er.code==="bad_request" && !fellBack){ fellBack=true; // watch refused: read once instead
-      S.mcp.callTool("Notion","notion-query-data-sources",nIn).then(r=>apply("n","노션 보노 캘린더",r&&r.payload),e=>apply("n","노션 보노 캘린더",undefined,e)); return; }
-    apply("n","노션 보노 캘린더",undefined,er);
-  },{refetchInterval:600000});
-  const gIn={startTime:`${first}T00:00:00`, endTime:`${next}T00:00:00`, orderBy:"startTime", pageSize:250, timeZone:TZ};
-  S.calUnsub = S.mcp.watchTool("Google Calendar","list_events",gIn,ev=>{
-    if(ev.type==="data") return apply("g","Google 캘린더",ev.result&&ev.result.payload);
-    apply("g","Google 캘린더",undefined,ev.error||{});
+      S.mcp.callTool("Notion","notion-calendar-list-events",input).then(r=>{ mergeCal(r&&r.payload); S.calSt.n="ok"; done(); },e=>{ S.calSt.n=mcpMessage(e,label); done(); }); return; }
+    if(AUTHZ.has(er.code)){ S.calEvents=[]; S.calSt.n=mcpMessage(er,label); }
+    else if(S.calSt.n!=="ok") S.calSt.n=mcpMessage(er,label);
+    done();
   },{refetchInterval:600000});
 }
 
@@ -840,7 +823,7 @@ function wireMcp(mcp){
 }
 function noMcp(){
   const m="이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에서 열면 메일·캘린더·루틴이 연결됩니다.";
-  renderMail([],m); renderRoutines(m); renderSessions(m); S.calSt={n:m,g:m}; renderCal();
+  renderMail([],m); renderRoutines(m); renderSessions(m); S.calSt={n:m}; renderCal();
   ["conn-mail","conn-cal","conn-cc"].forEach(id=>setConn(id,"err"));
 }
 
