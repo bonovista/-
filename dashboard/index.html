@@ -73,6 +73,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .ph .meta{font-size:var(--fs-xs);color:var(--fg-3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ph .act{margin-left:auto;display:flex;gap:4px;align-items:center}
 .tbtn{background:none;border:1px solid transparent;color:var(--fg-2);font-size:var(--fs-xs);padding:3px 6px;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+a.tbtn{text-decoration:none}
 .tbtn:hover{border-color:var(--line-2);color:var(--fg)}
 .badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--fg);color:var(--bg);font-size:11px;font-weight:600}
 .note{font-size:var(--fs-s);color:var(--fg-3);line-height:1.6}
@@ -134,6 +135,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .agenda .h{display:flex;justify-content:space-between;font-size:var(--fs-s);color:var(--fg-2);margin-bottom:6px}
 .ev{display:flex;gap:12px;font-size:var(--fs-m);padding:4px 0}
 .ev .tm{width:38px;flex:none;color:var(--fg-3);font-size:var(--fs-s)}
+.ev .src{margin-left:auto;flex:none;font-size:10.5px;color:var(--fg-3)}
 .ev a,.ev span.tt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
 .ev a:hover{text-decoration:underline}
 
@@ -224,6 +226,12 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
       <div class="kpi" data-k="instagram"><div class="lab"><svg class="i" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><circle cx="8" cy="8" r="2.6"/></svg>인스타그램</div><div class="val num">—</div><div class="cap">불러오는 중</div></div>
     </div>
 
+    <section class="panel" id="sec-ledger">
+      <div class="ph"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 2.5h7l2 2v9h-9z"/><path d="M5.5 6.5h5M5.5 9h5M5.5 11.5h3"/></svg><h2>쇼룸 장부</h2><span class="meta">ledger.bonovista.com</span>
+        <span class="act"><a class="tbtn" href="https://ledger.bonovista.com" target="_blank" rel="noopener">장부 열기 ↗</a></span></div>
+      <div id="ledger"><div class="empty">오늘 매출·손님 수·베이거 재고 경고가 이 칸에 뜹니다. 장부 데이터는 Supabase에 있어서, claude.ai에 Supabase 커넥터를 연결하면 Claude가 이 칸을 채웁니다. 그 전까지는 '장부 열기'로 앱을 바로 엽니다.</div></div>
+    </section>
+
     <section class="panel" id="sec-goals">
       <div class="ph"><svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.5"/></svg><h2>목표</h2><span class="meta" id="goals-meta"></span>
         <span class="act"><button class="tbtn" id="goal-add" type="button">추가</button></span></div>
@@ -236,7 +244,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
     </section>
 
     <section class="panel" id="sec-cal">
-      <div class="ph"><svg class="i" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><h2>캘린더</h2><span class="meta">Google 캘린더</span>
+      <div class="ph"><svg class="i" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><h2>캘린더</h2><span class="meta">보노 캘린더 · Google</span>
         <span class="act"><button class="tbtn" id="cal-prev" type="button" aria-label="이전 달"><svg class="i" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><span class="num" id="cal-month" style="font-size:var(--fs-s)"></span><button class="tbtn" id="cal-next" type="button" aria-label="다음 달"><svg class="i" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg></button></span></div>
       <div class="cal-head" aria-hidden="true"><span></span><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>주간 일정</span><span></span></div>
       <div id="cal-grid"></div>
@@ -346,7 +354,7 @@ const S = {
   db:null, dbState:"pending", mcp:null, canRunCloud:false,
   kpis:{}, goals:[], skills:[], runs:{}, routines:[], routinesOff:0, sessions:[],
   mailCount:null, filter:null, q:"", openSkill:null,
-  calMonth:null, calEvents:[], calSel:null, calUnsub:null
+  calMonth:null, calEvents:[], calSel:null, calUnsub:null, calUnsubN:null, calG:[], calN:[], calSt:{n:"loading",g:"loading"}, calMonthCount:0
 };
 
 /* ---------- clock ---------- */
@@ -433,30 +441,53 @@ function initCal(){
   $("#cal-next").addEventListener("click",()=>shiftMonth(1));
   renderCal();
 }
-function shiftMonth(n){ let {y,m}=S.calMonth; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} S.calMonth={y,m}; S.calEvents=[]; S.calSel=`${y}-${String(m+1).padStart(2,"0")}-01`; if(y+"-"+String(m+1).padStart(2,"0")===todayYMD().slice(0,7)) S.calSel=todayYMD(); renderCal(); watchCal(); }
-function evDay(e){
-  const s=e && (e.start||e.startTime||e.start_time);
-  let v = s && typeof s==="object" ? (s.dateTime||s.date_time||s.date) : s;
-  if(!v) return null;
-  if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return {ymd:v, time:"종일"};
-  const d=new Date(v); if(isNaN(d)) return null;
-  return {ymd:ymdKST(d), time:hmKST(d)};
+const BONO_CAL = "collection://a00f00f6-eb71-4132-877f-269ae02412eb"; // Notion: 보노 캘린더 (team schedule)
+function shiftMonth(n){ let {y,m}=S.calMonth; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} S.calMonth={y,m}; S.calSel=`${y}-${String(m+1).padStart(2,"0")}-01`; if(y+"-"+String(m+1).padStart(2,"0")===todayYMD().slice(0,7)) S.calSel=todayYMD(); watchCal(); renderCal(); }
+function addDays(ymd,k){ const d=new Date(ymd+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+k); return d.toISOString().slice(0,10); }
+const isYmd = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
+const toYmd = v => isYmd(v) ? v : ymdKST(new Date(v));
+function mergeCal(){
+  const out=[];
+  for(const r of S.calN){
+    const k = r["date:날짜:start"] ? "날짜" : (r["date:날짜 1:start"] ? "날짜 1" : null); if(!k) continue;
+    const s=r[`date:${k}:start`], e=r[`date:${k}:end`]||null, dt=r[`date:${k}:is_datetime`]===1 && !isYmd(s);
+    out.push({s,e,allDay:!dt,excl:false,title:r["이름"]||"(제목 없음)",link:safeUrl(r.url),src:"노션"});
+  }
+  for(const g of S.calG){
+    const st=g.start||g.startTime, en=g.end||g.endTime;
+    const s=st&&typeof st==="object"?(st.dateTime||st.date):st, e=en&&typeof en==="object"?(en.dateTime||en.date):en;
+    if(!s) continue; const ad=isYmd(s);
+    out.push({s,e:e||null,allDay:ad,excl:ad,title:g.summary||g.title||"(제목 없음)",link:safeUrl(g.htmlLink||g.html_link),src:"Google"});
+  }
+  S.calEvents=out;
 }
+function evDays(ev){
+  let a,b; try{ a=toYmd(ev.s); b=ev.e?toYmd(ev.e):a; }catch(e){ return []; }
+  if(!isYmd(a)) return []; if(!isYmd(b)||b<a) b=a;
+  if(ev.excl && b>a) b=addDays(b,-1);
+  const out=[]; for(let c=a,n=0; c<=b && n<62; c=addDays(c,1),n++) out.push(c); return out;
+}
+function calStatus(){ const v=[S.calSt.n,S.calSt.g]; return {loading:v.every(x=>x==="loading"), ok:v.some(x=>x==="ok"), errs:v.filter(x=>x && x!=="ok" && x!=="loading")}; }
 function renderCal(){
   const {y,m}=S.calMonth; $("#cal-month").textContent=monthKey(y,m);
-  const byDay={}; for(const e of S.calEvents){ const d=evDay(e); if(!d) continue; (byDay[d.ymd]=byDay[d.ymd]||[]).push({...d, title:e.summary||e.title||"(제목 없음)", link:safeUrl(e.htmlLink||e.html_link||e.url)}); }
+  const mp=`${y}-${String(m+1).padStart(2,"0")}`, byDay={}; let monthCount=0;
+  for(const ev of S.calEvents){
+    const ds=evDays(ev); if(ds.some(d=>d.startsWith(mp))) monthCount++;
+    ds.forEach((d,i)=>{ (byDay[d]=byDay[d]||[]).push({title:ev.title,link:ev.link,src:ev.src,time:i>0?"계속":(ev.allDay?"종일":hmKST(new Date(ev.s)))}); });
+  }
+  S.calMonthCount=monthCount;
   const first=new Date(Date.UTC(y,m,1)), startW=first.getUTCDay(), days=new Date(Date.UTC(y,m+1,0)).getUTCDate();
   const weeks=Math.ceil((startW+days)/7), grid=$("#cal-grid"); grid.replaceChildren();
-  const weekCounts=[]; for(let w=0;w<weeks;w++){ let c=0; for(let i=0;i<7;i++){ const dn=w*7+i-startW+1; if(dn>=1&&dn<=days){ const k=`${y}-${String(m+1).padStart(2,"0")}-${String(dn).padStart(2,"0")}`; c+=(byDay[k]||[]).length; } } weekCounts.push(c); }
+  const key=dn=>`${mp}-${String(dn).padStart(2,"0")}`;
+  const weekCounts=[]; for(let w=0;w<weeks;w++){ let c=0; for(let i=0;i<7;i++){ const dn=w*7+i-startW+1; if(dn>=1&&dn<=days) c+=(byDay[key(dn)]||[]).length; } weekCounts.push(c); }
   const maxW=Math.max(1,...weekCounts), today=todayYMD();
   for(let w=0;w<weeks;w++){
     const row=h("div","cal-row"); row.append(h("span","wk",`${w+1}주차`));
     for(let i=0;i<7;i++){
-      const dn=w*7+i-startW+1;
-      const b=h("button","day"); b.type="button";
+      const dn=w*7+i-startW+1, b=h("button","day"); b.type="button";
       if(dn<1||dn>days){ b.classList.add("out"); b.disabled=true; b.tabIndex=-1; b.setAttribute("aria-hidden","true"); }
       else{
-        const k=`${y}-${String(m+1).padStart(2,"0")}-${String(dn).padStart(2,"0")}`, n=(byDay[k]||[]).length;
+        const k=key(dn), n=(byDay[k]||[]).length;
         b.dataset.l=String(Math.min(3,n)); b.setAttribute("aria-label",`${m+1}월 ${dn}일 일정 ${n}건`); b.title=`${m+1}.${dn} · 일정 ${n}건`;
         if(k===today) b.classList.add("today"); if(k===S.calSel) b.classList.add("sel");
         b.addEventListener("click",()=>{ S.calSel=k; renderCal(); });
@@ -466,29 +497,50 @@ function renderCal(){
     const bar=h("div","wbar"), fill=h("i"); fill.style.width=(weekCounts[w]/maxW*100)+"%"; bar.append(fill);
     row.append(bar, h("span","wn num",weekCounts[w])); grid.append(row);
   }
-  const ag=$("#agenda"); ag.replaceChildren();
-  if(S.calState && S.calState.err){ ag.append(h("div","note err",S.calState.err)); return; }
-  if(!S.calState || S.calState.loading){ ag.append(h("div","empty","일정을 불러오는 중")); return; }
+  const ag=$("#agenda"); ag.replaceChildren(); const st=calStatus();
+  if(!st.ok){ if(st.loading) ag.append(h("div","empty","일정을 불러오는 중")); else st.errs.forEach(e=>ag.append(h("div","note err",e))); return; }
   const sel=S.calSel, list=(byDay[sel]||[]).sort((a,b)=>a.time.localeCompare(b.time));
   const [sy,sm,sd]=sel.split("-").map(Number); const wd=new Intl.DateTimeFormat("ko-KR",{weekday:"short",timeZone:"UTC"}).format(new Date(Date.UTC(sy,sm-1,sd)));
-  const hd=h("div","h"); hd.append(h("span",null,`${sm}월 ${sd}일 (${wd}) · 일정 ${list.length}건`), h("span","num",`이번 달 ${S.calEvents.length}건`)); ag.append(hd);
+  const hd=h("div","h"); hd.append(h("span",null,`${sm}월 ${sd}일 (${wd}) · 일정 ${list.length}건`), h("span","num",`이번 달 ${monthCount}건`)); ag.append(hd);
   if(!list.length) ag.append(h("div","empty","이날은 비어 있습니다."));
-  for(const e of list){ const r=h("div","ev"); r.append(h("span","tm num",e.time)); if(e.link){ const a=h("a",null,e.title); a.href=e.link; a.target="_blank"; a.rel="noopener"; r.append(a);} else r.append(h("span","tt",e.title)); ag.append(r); }
+  for(const e of list){ const r=h("div","ev"); r.append(h("span","tm num",e.time)); if(e.link){ const a=h("a",null,e.title); a.href=e.link; a.target="_blank"; a.rel="noopener"; r.append(a);} else r.append(h("span","tt",e.title)); r.append(h("span","src",e.src)); ag.append(r); }
 }
 function watchCal(){
-  if(!S.mcp){ return; }
-  if(S.calUnsub){ try{S.calUnsub();}catch(e){} S.calUnsub=null; }
+  if(!S.mcp) return;
+  for(const u of [S.calUnsub,S.calUnsubN]) if(u){ try{u();}catch(e){} }
+  S.calUnsub=S.calUnsubN=null; S.calG=[]; S.calN=[]; mergeCal();
   const {y,m}=S.calMonth; const ny=m===11?y+1:y, nm=m===11?0:m+1;
-  const input={startTime:`${y}-${String(m+1).padStart(2,"0")}-01T00:00:00`, endTime:`${ny}-${String(nm+1).padStart(2,"0")}-01T00:00:00`, orderBy:"startTime", pageSize:250, timeZone:TZ};
-  S.calState={loading:true}; renderCal();
-  S.calUnsub = S.mcp.watchTool("Google Calendar","list_events",input,ev=>{
-    if(ev.type==="data"){
-      const p=ev.result && ev.result.payload; const list=Array.isArray(p)?p:(p&&(p.events||p.items||p.data))||[];
-      S.calEvents=Array.isArray(list)?list:[]; S.calState={}; setConn("conn-cal","ok"); renderCal(); updateMeta();
-    }else{
-      const er=ev.error||{}; if(AUTHZ.has(er.code)){ S.calEvents=[]; setConn("conn-cal","err"); }
-      if(AUTHZ.has(er.code) || !S.calEvents.length){ S.calState={err:mcpMessage(er,"Google 캘린더")}; renderCal(); }
+  const first=`${y}-${String(m+1).padStart(2,"0")}-01`, next=`${ny}-${String(nm+1).padStart(2,"0")}-01`, last=addDays(next,-1);
+  S.calSt={n:"loading",g:"loading"};
+  const apply=(src,label,p,er)=>{
+    if(p!==undefined){
+      if(src==="g"){ const l=Array.isArray(p)?p:(p&&(p.events||p.items||p.data))||[]; S.calG=Array.isArray(l)?l:[]; }
+      else { const l=(p&&(p.results||p.rows||p.data))||[]; S.calN=Array.isArray(l)?l:[]; }
+      S.calSt[src]="ok";
+    }else if(er){
+      if(AUTHZ.has(er.code)){ if(src==="g") S.calG=[]; else S.calN=[]; S.calSt[src]=mcpMessage(er,label); }
+      else if(S.calSt[src]!=="ok") S.calSt[src]=mcpMessage(er,label);
     }
+    mergeCal(); const st=calStatus(); setConn("conn-cal", st.ok?"ok":(st.loading?"wait":"err")); renderCal(); updateMeta();
+  };
+  const range={type:"exact",value:{type:"daterange",start_date:first,end_date:last}};
+  const nIn={data:{mode:"rows",data_source_url:BONO_CAL,
+    filter:{type:"group",operator:"or",filters:[
+      {type:"property",property:"날짜",propertyType:"date",operator:"date_is_within",value:range},
+      {type:"property",property:"날짜",propertyType:"date",operator:"date_is_within",use_end:true,value:range}]},
+    sort:[{property:"날짜",direction:"ascending"}], limit:100}};
+  let fellBack=false;
+  S.calUnsubN = S.mcp.watchTool("Notion","notion-query-data-sources",nIn,ev=>{
+    if(ev.type==="data") return apply("n","노션 보노 캘린더",ev.result&&ev.result.payload);
+    const er=ev.error||{};
+    if(er.code==="bad_request" && !fellBack){ fellBack=true; // watch refused: read once instead
+      S.mcp.callTool("Notion","notion-query-data-sources",nIn).then(r=>apply("n","노션 보노 캘린더",r&&r.payload),e=>apply("n","노션 보노 캘린더",undefined,e)); return; }
+    apply("n","노션 보노 캘린더",undefined,er);
+  },{refetchInterval:600000});
+  const gIn={startTime:`${first}T00:00:00`, endTime:`${next}T00:00:00`, orderBy:"startTime", pageSize:250, timeZone:TZ};
+  S.calUnsub = S.mcp.watchTool("Google Calendar","list_events",gIn,ev=>{
+    if(ev.type==="data") return apply("g","Google 캘린더",ev.result&&ev.result.payload);
+    apply("g","Google 캘린더",undefined,ev.error||{});
   },{refetchInterval:600000});
 }
 
@@ -739,7 +791,7 @@ function renderLegend(){
 function setFilter(id){ S.filter=id; renderLegend(); renderSkills(); if(B.still) drawFrame(); }
 function updateMeta(){
   const parts=[`스킬 ${S.skills.length}`, `루틴 ${S.routines.length}`, `세션 ${S.sessions.length}`];
-  if(S.calEvents.length) parts.push(`이번 달 일정 ${S.calEvents.length}`);
+  if(S.calMonthCount) parts.push(`이번 달 일정 ${S.calMonthCount}`);
   $("#brain-meta").textContent=parts.join(" · ");
 }
 
@@ -788,7 +840,7 @@ function wireMcp(mcp){
 }
 function noMcp(){
   const m="이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에서 열면 메일·캘린더·루틴이 연결됩니다.";
-  renderMail([],m); renderRoutines(m); renderSessions(m); S.calState={err:m}; renderCal();
+  renderMail([],m); renderRoutines(m); renderSessions(m); S.calSt={n:m,g:m}; renderCal();
   ["conn-mail","conn-cal","conn-cc"].forEach(id=>setConn(id,"err"));
 }
 
