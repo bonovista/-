@@ -260,7 +260,8 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
   <!-- CENTER: second brain -->
   <div class="center">
     <section class="brain" id="sec-brain">
-      <div class="ph"><svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11M2.5 8h11"/></svg><h2>세컨드 브레인</h2><span class="meta num" id="brain-meta">스킬과 루틴을 도메인별로 묶은 지도</span></div>
+      <div class="ph"><svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11M2.5 8h11"/></svg><h2>세컨드 브레인</h2><span class="meta num" id="brain-meta">스킬과 루틴을 도메인별로 묶은 지도</span>
+        <span class="act"><span class="meta" id="power-state" aria-live="polite"></span><button class="tbtn" id="power" type="button" aria-pressed="false" title="1분 동안 조작이 없으면 회전을 늦추고 초당 8번만 그립니다. 누르면 항상 절전합니다.">절전</button></span></div>
       <div class="stage" id="stage"><canvas id="brain" aria-hidden="true"></canvas><div class="tip" id="tip" hidden></div></div>
       <div class="legend" id="legend"></div>
     </section>
@@ -620,6 +621,18 @@ function renderRoutines(err){
 
 /* ---------- brain (canvas) ---------- */
 const B = { cv:null, ctx:null, w:0, h:0, dpr:1, clusters:[], hubs:[], t:0, raf:0, hover:null, still:matchMedia("(prefers-reduced-motion: reduce)").matches };
+/* power saving: after a minute without pointer or keyboard activity (or when pinned on),
+   the brain turns at 30% speed and redraws about 8 times a second instead of every frame */
+const IDLE_MS = 60000, LOW_GAP = 125;
+B.last = 0; B.active = Date.now(); B.force = lsGet("bv-power")==="1"; B.low = false;
+function isLow(){ return B.force || (Date.now()-B.active > IDLE_MS); }
+function setPowerUi(){
+  const b=$("#power"); if(!b) return;
+  b.hidden = B.still;
+  b.setAttribute("aria-pressed", B.force?"true":"false");
+  b.textContent = B.force ? "절전 고정" : "절전";
+  $("#power-state").textContent = (!B.still && B.low) ? "절전 중" : "";
+}
 function brainItems(){
   const by=Object.fromEntries(DOMAINS.map(d=>[d.id,{skills:[],routines:[]}]));
   for(const s of S.skills){ (by[s.domain]||by.team).skills.push(s); }
@@ -686,11 +699,22 @@ function drawFrame(){
     ctx.fillText(`스킬 ${cl.skills} · 루틴 ${cl.routines}`, cl.cx, cl.cy+cl.R+37);
   }
 }
-function loop(ts){ B.t=ts/1000; drawFrame(); B.raf=requestAnimationFrame(loop); }
+function loop(ts){
+  B.raf=requestAnimationFrame(loop);
+  const low=isLow();
+  if(low!==B.low){ B.low=low; setPowerUi(); }
+  if(B.last && low && ts-B.last<LOW_GAP) return;
+  const dt=B.last?Math.min(0.25,(ts-B.last)/1000):0; B.last=ts;
+  B.t+=dt*(low?0.3:1); drawFrame();
+}
 function initBrain(){
   B.cv=$("#brain"); B.ctx=B.cv.getContext("2d");
   new ResizeObserver(()=>layout()).observe($("#stage"));
-  document.addEventListener("visibilitychange",()=>{ if(B.still) return; if(document.hidden){ cancelAnimationFrame(B.raf); B.raf=0; } else if(!B.raf){ B.raf=requestAnimationFrame(loop); } });
+  document.addEventListener("visibilitychange",()=>{ if(B.still) return; if(document.hidden){ cancelAnimationFrame(B.raf); B.raf=0; } else if(!B.raf){ B.last=0; B.raf=requestAnimationFrame(loop); } });
+  const wake=()=>{ B.active=Date.now(); if(B.low && !B.force){ B.low=false; setPowerUi(); } };
+  ["pointermove","pointerdown","keydown","wheel","touchstart"].forEach(t=>window.addEventListener(t,wake,{passive:true}));
+  $("#power").addEventListener("click",()=>{ B.force=!B.force; lsSet("bv-power",B.force?"1":"0"); B.active=Date.now(); setPowerUi(); });
+  setPowerUi();
   const tip=$("#tip");
   B.cv.addEventListener("mousemove",e=>{
     const r=B.cv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
