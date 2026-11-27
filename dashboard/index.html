@@ -181,6 +181,12 @@ a.tbtn{text-decoration:none}
 .lg-kv.zero .k,.lg-kv.zero .v{color:var(--fg-3);font-weight:400}
 .lg-kv.sum{border-top:1px solid var(--line);margin-top:3px;padding-top:6px}
 #ledger .btn{margin-top:8px}
+.lg-form{display:flex;gap:6px;margin-top:4px}
+.lg-form .btn{flex:none}
+#lf-out{margin-top:6px}
+#lf-out .side{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:none}
+.lg-amt{font-size:var(--fs-m);font-weight:600;white-space:nowrap}
+.lg-amt.neg{color:var(--warn)}
 
 /* skills */
 .search{display:flex;align-items:center;gap:6px;flex:1;min-width:0;background:var(--bg-2);border:1px solid var(--line);padding:4px 8px;color:var(--fg-3)}
@@ -247,6 +253,14 @@ a.tbtn{text-decoration:none}
       <div class="ph"><svg class="i" viewBox="0 0 16 16"><path d="M3.5 2.5h7l2 2v9h-9z"/><path d="M5.5 6.5h5M5.5 9h5M5.5 11.5h3"/></svg><h2>쇼룸 장부</h2><span class="meta">ledger.bonovista.com</span>
         <span class="act"><a class="tbtn" href="https://ledger.bonovista.com" target="_blank" rel="noopener">장부 열기 ↗</a></span></div>
       <div id="ledger"><div class="empty">불러오는 중</div></div>
+      <div class="lg-sec" id="ledger-find">
+        <div class="h">판매 내역 검색</div>
+        <form class="lg-form" id="lf-form" role="search">
+          <label class="search"><svg class="i" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4"/><path d="m10 10 3.5 3.5"/></svg><input id="lf-q" type="search" placeholder="제품명 · 예: 스웨트, 코야" aria-label="판매 내역을 제품명으로 검색" maxlength="40" autocomplete="off"></label>
+          <button class="btn" type="submit" id="lf-go">찾기</button>
+        </form>
+        <div id="lf-out"></div>
+      </div>
     </section>
 
     <section class="panel" id="sec-goals">
@@ -569,7 +583,7 @@ function senderName(s){ s=String(s||""); const m=s.match(/^\s*"?([^"<]+?)"?\s*<[
 function renderMail(list, err, at){
   const box=$("#mail"); box.replaceChildren();
   if(err){ box.append(h("div","note err",err)); $("#mail-foot").textContent=""; return; }
-  if(!list.length){ box.append(h("div","empty","받은편지함이 비어 있습니다.")); }
+  if(!list.length){ box.append(h("div","empty","최근 나흘 동안 받은편지함에 온 메일이 없습니다.")); }
   for(const t of list.slice(0,6)){
     const msgs=Array.isArray(t.messages)?t.messages:[]; const msg=msgs[msgs.length-1]||{};
     const r=h("div","row mail"), main=h("div","main");
@@ -756,7 +770,8 @@ function dayLabel(ymd){
   return `${m}.${d} (${new Intl.DateTimeFormat("ko-KR",{weekday:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d)))})`;
 }
 /* execute_sql answers {result:"…<untrusted-data-ID>[{"d":{…}}]</untrusted-data-ID>…"}; the rows sit between the two ID tags */
-function parseLedger(p){
+function parseLedger(p){ const d=sqlResult(p); return (d && d.today && typeof d.today==="object") ? d : null; }
+function sqlResult(p){
   let t=p;
   if(t && typeof t==="object" && !Array.isArray(t)) t = typeof t.result==="string" ? t.result : (Array.isArray(t.result) ? t.result : t);
   let rows=t;
@@ -766,7 +781,7 @@ function parseLedger(p){
   }
   const r=Array.isArray(rows)?rows[0]:rows; let d=r&&r.d;
   if(typeof d==="string"){ try{ d=JSON.parse(d); }catch(e){ return null; } }
-  return (d && typeof d==="object" && d.today && typeof d.today==="object") ? d : null;
+  return (d && typeof d==="object" && !Array.isArray(d)) ? d : null;
 }
 function lkv(k, v, c, cls){ const r=h("div","lg-kv"+(cls?" "+cls:"")); r.append(h("span","k",k), h("span","v num",v), h("span","c num",c||"")); return r; }
 function ledgerButton(label){
@@ -866,6 +881,88 @@ function watchLedger(){
     ledgerError(er);
   },{refetchInterval:LEDGER_EVERY});
 }
+
+/* ---------- ledger: search sales by product name ---------- */
+/* The typed name reaches SQL only as hex ([0-9a-f]), decoded inside the SELECT, so it can never change the statement.
+   Matches the line's name (spaces ignored) or its 종류, over all days; sums cover every match, rows show the latest 30. */
+const LF = {seq:0, busy:false, res:null, err:null, term:"", all:false, off:false};
+const LF_FIRST = 8;
+const METHOD = {card:"카드", transfer:"계좌이체", cash:"현금", split:"나눠서"};
+const toHex = s => Array.from(new TextEncoder().encode(s), b=>b.toString(16).padStart(2,"0")).join("");
+function findSql(hex){
+  if(!/^[0-9a-f]+$/.test(hex)) throw new Error("bad term");
+  return `with q as (select regexp_replace(lower(convert_from(decode('${hex}', 'hex'), 'UTF8')), '[[:space:]]+', '', 'g') as t),
+m as (
+  select l.sold_on, l.name, l.category, l.qty, l.unit_price, l.disc_pct, src.name as src, s.kind, s.method, s.created_at,
+         case when s.kind = 'refund' then -1 else 1 end as sg
+    from public.sale_lines l
+    join public.sales s on s.id = l.sale_id
+    join public.sources src on src.id = l.source_id, q
+   where q.t <> ''
+     and (strpos(regexp_replace(lower(l.name), '[[:space:]]+', '', 'g'), q.t) > 0
+          or strpos(lower(coalesce(l.category, '')), q.t) > 0)
+)
+select jsonb_build_object(
+  'count',  (select count(*) from m),
+  'qty',    (select coalesce(sum(sg * qty), 0) from m),
+  'amount', (select coalesce(sum(sg * qty * unit_price), 0) from m),
+  'first',  (select to_char(min(sold_on), 'YYYY-MM-DD') from m),
+  'last',   (select to_char(max(sold_on), 'YYYY-MM-DD') from m),
+  'rows',   (select coalesce(jsonb_agg(jsonb_build_object(
+                'day', to_char(sold_on, 'YYYY-MM-DD'), 'name', name, 'category', category, 'src', src,
+                'qty', qty, 'unit', unit_price, 'disc', disc_pct, 'kind', kind, 'method', method)
+              order by sold_on desc, created_at desc), '[]'::jsonb)
+               from (select * from m order by sold_on desc, created_at desc limit 30) r)
+) as d`;
+}
+function fmtDay(ymd){ const [y,m,d]=String(ymd||"").split("-").map(Number); if(!y) return ""; return (String(y)===todayYMD().slice(0,4)?"":`${y}.`)+`${m}.${d}`; }
+function renderFind(){
+  const out=$("#lf-out"), go=$("#lf-go"); out.replaceChildren();
+  go.disabled = LF.busy || !S.mcp; go.textContent = LF.busy ? "찾는 중…" : "찾기";
+  if(LF.off){ out.append(h("div","lg-cap","이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에서 열면 검색할 수 있습니다.")); return; }
+  if(LF.err){ out.append(h("div","note err",LF.err)); return; }
+  const R=LF.res;
+  if(!R){ out.append(h("div","lg-cap", LF.busy ? `‘${LF.term}’ 찾는 중입니다.` : "전체 기간의 판매·환불을 제품명이나 종류로 찾습니다. 띄어쓰기는 무시합니다.")); return; }
+  const rows=Array.isArray(R.rows)?R.rows:[], cnt=num(R.count);
+  if(!cnt){ out.append(h("div","empty",`‘${LF.term}’ 판매 기록이 없습니다.`)); return; }
+  const range = R.first===R.last ? fmtDay(R.first) : `${fmtDay(R.first)} – ${fmtDay(R.last)}`;
+  out.append(h("div","lg-cap num",`‘${LF.term}’ ${cnt}건 · ${num(R.qty)}점 · ${signed(R.amount)}원 · ${range}`));
+  const shown = LF.all ? rows : rows.slice(0, LF_FIRST);
+  for(const r of shown){
+    const ref=r.kind==="refund", q=num(r.qty), amt=(ref?-1:1)*q*num(r.unit);
+    const row=h("div","row"), main=h("div","main"), side=h("div","side");
+    const bits=[fmtDay(r.day), r.src, Object.prototype.hasOwnProperty.call(METHOD, r.method) ? METHOD[r.method] : ""];
+    if(num(r.disc)) bits.push(`${num(r.disc)}% 할인`);
+    if(q>1) bits.push(`${q}점`);
+    bits.push(r.category);
+    for(let i=bits.length-1;i>=0;i--) if(typeof bits[i]!=="string" || !bits[i]) bits.splice(i,1);
+    main.append(h("div","t1",r.name||"(이름 없음)"), h("div","t2 num",bits.join(" · ")));
+    side.append(h("span","lg-amt num"+(ref?" neg":""),`${signed(amt)}원`));
+    if(ref) side.append(h("span","pill block","환불"));
+    row.append(main, side); out.append(row);
+  }
+  if(rows.length>shown.length){ const more=h("button","tbtn",`${rows.length-shown.length}건 더 보기`); more.type="button"; more.style.paddingLeft="0"; more.addEventListener("click",()=>{ LF.all=true; renderFind(); }); out.append(more); }
+  if(cnt>rows.length) out.append(h("div","lg-cap",`최근 ${rows.length}건까지 보여 드립니다. 나머지는 장부 앱의 매출 장부에서 봅니다.`));
+}
+function runFind(raw){
+  const term=String(raw||"").replace(/\s+/g," ").trim().slice(0,40);
+  if(LF.busy) return;
+  LF.term=term; LF.all=false; LF.err=null; LF.res=null;
+  if(!term || !S.mcp){ renderFind(); return; }
+  let query; try{ query=findSql(toHex(term)); }catch(e){ LF.err="검색어를 읽지 못했습니다. 다른 말로 찾아 주세요."; renderFind(); return; }
+  const seq=++LF.seq; LF.busy=true; renderFind();
+  S.mcp.callTool("Supabase","execute_sql",{project_id:LEDGER_PROJECT, query}).then(res=>{
+    if(seq!==LF.seq) return;
+    const d=sqlResult(res&&res.payload);
+    if(d && Array.isArray(d.rows)) LF.res=d;
+    else LF.err="검색 응답을 읽지 못했습니다. '장부 열기'로 앱에서 찾아 주세요.";
+  }, er=>{
+    if(seq!==LF.seq) return;
+    LF.err = (er&&er.code==="approval_required") ? "검색하려면 Supabase 호출을 허용해 주셔야 합니다. '찾기'를 다시 눌러 주세요." : mcpMessage(er,"Supabase");
+  }).finally(()=>{ if(seq===LF.seq){ LF.busy=false; renderFind(); } });
+}
+$("#lf-form").addEventListener("submit",e=>{ e.preventDefault(); runFind($("#lf-q").value); });
+$("#lf-q").addEventListener("input",e=>{ if(!e.target.value.trim() && (LF.res||LF.err) && !LF.busy){ LF.res=null; LF.err=null; LF.term=""; renderFind(); } });
 
 /* ---------- brain (canvas) ---------- */
 const B = { cv:null, ctx:null, w:0, h:0, dpr:1, clusters:[], hubs:[], t:0, raf:0, hover:null, still:matchMedia("(prefers-reduced-motion: reduce)").matches };
@@ -1002,12 +1099,28 @@ function wireDb(db){
 }
 function wireMcp(mcp){
   S.mcp=mcp;
-  // mail
-  let mailList=[];
-  mcp.watchTool("Gmail","search_threads",{query:"in:inbox",pageSize:6,view:"THREAD_VIEW_MINIMAL"},ev=>{
-    if(ev.type==="data"){ const p=ev.result.payload||{}; mailList=Array.isArray(p.threads)?p.threads:[]; setConn("conn-mail","ok"); renderMail(mailList,null,(ev.result.cache&&ev.result.cache.storedAt)||Date.now()); }
-    else{ const er=ev.error||{}; if(AUTHZ.has(er.code)){ mailList=[]; setConn("conn-mail","err"); renderMail([],mcpMessage(er,"Gmail")); } else if(!mailList.length) renderMail([],mcpMessage(er,"Gmail")); }
-  },{refetchInterval:300000});
+  // mail — the Gmail connector ranks in:inbox its own way, not newest first, so a plain "in:inbox, 6 threads"
+  // kept showing the same old threads. Ask for recent windows (1 day; 4 days for quiet stretches), merge them,
+  // and sort here by the latest message id: a Gmail id starts with its receive time in ms (id >> 20).
+  const MAIL_QS=["in:inbox newer_than:1d","in:inbox newer_than:4d"];
+  const mailSets=MAIL_QS.map(()=>null), mailAts=MAIL_QS.map(()=>0), mailErrs=MAIL_QS.map(()=>null);
+  const mailKey=t=>{ const ms=Array.isArray(t.messages)?t.messages:[]; const m=ms[ms.length-1]||{}; const s=String(m.id||t.id||""); return /^[0-9a-f]{1,16}$/i.test(s)?BigInt("0x"+s):0n; };
+  const showMail=()=>{
+    const seen=new Map();   // a thread in both windows: keep the copy whose latest message is newer
+    for(const set of mailSets) for(const t of (set||[])){ if(!t || !t.id) continue; const o=seen.get(t.id); if(!o || mailKey(t)>mailKey(o)) seen.set(t.id,t); }
+    const list=[...seen.values()].sort((a,b)=>{ const x=mailKey(a), y=mailKey(b); return x===y?0:(x>y?-1:1); });
+    if(!list.length && mailSets.some(s=>s==null)){   // nothing yet and a window still pending: don't claim "no mail"
+      const e=mailErrs.find(Boolean); if(e) renderMail([],e); return;
+    }
+    const ats=mailAts.filter(Boolean);
+    renderMail(list,null,ats.length?Math.min(...ats):Date.now());
+  };
+  MAIL_QS.forEach((query,i)=>{
+    mcp.watchTool("Gmail","search_threads",{query,pageSize:50,view:"THREAD_VIEW_SUMMARY"},ev=>{
+      if(ev.type==="data"){ const p=ev.result.payload||{}; mailSets[i]=Array.isArray(p.threads)?p.threads:[]; mailAts[i]=(ev.result.cache&&ev.result.cache.storedAt)||Date.now(); mailErrs[i]=null; setConn("conn-mail","ok"); showMail(); }
+      else{ const er=ev.error||{}; if(AUTHZ.has(er.code)){ mailSets.fill(null); mailAts.fill(0); setConn("conn-mail","err"); renderMail([],mcpMessage(er,"Gmail")); } else { mailErrs[i]=mcpMessage(er,"Gmail"); if(mailSets[i]==null) showMail(); } }
+    },{refetchInterval:300000});
+  });
   mcp.watchTool("Gmail","search_threads",{query:"in:inbox is:unread",pageSize:50,view:"THREAD_VIEW_IDS_ONLY"},ev=>{
     const b=$("#unread");
     if(ev.type==="data"){ const p=ev.result.payload||{}; const n=Array.isArray(p.threads)?p.threads.length:0; S.mailCount=n; b.hidden=n===0; b.textContent=n>=50?"50+":String(n); b.setAttribute("aria-label",`안 읽은 메일 ${b.textContent}건`); }
@@ -1016,7 +1129,7 @@ function wireMcp(mcp){
   // calendar
   watchCal();
   // showroom ledger
-  watchLedger();
+  watchLedger(); renderFind();
   // routines
   mcp.watchTool("Claude Code Remote","list_triggers",{limit:50},ev=>{
     if(ev.type==="data"){
@@ -1040,10 +1153,11 @@ function noMcp(){
   const m="이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에서 열면 메일·캘린더·루틴이 연결됩니다.";
   renderMail([],m); renderRoutines(m); renderSessions(m); S.calSt={n:m}; renderCal();
   S.ledgerErr="이 화면에서는 커넥터를 쓸 수 없습니다. claude.ai에서 열면 장부 숫자가 뜨고, 그 전까지는 '장부 열기'로 앱을 엽니다."; renderLedger();
+  LF.off=true; renderFind();
   ["conn-mail","conn-cal","conn-cc","conn-ledger"].forEach(id=>setConn(id,"err"));
 }
 
-initCal(); initBrain(); renderKpis(); renderGoals(); renderSkills(); updateMeta();
+initCal(); initBrain(); renderKpis(); renderGoals(); renderSkills(); updateMeta(); renderFind();
 Promise.all([use("db"),use("mcp")]).then(([db,mcp])=>{
   if(db) wireDb(db); else { S.dbState="none"; renderKpis(); renderGoals(); renderSkills(); }
   if(mcp) wireMcp(mcp); else noMcp();
